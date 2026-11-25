@@ -1,0 +1,927 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Buat proyek
+        run: |
+          cat > settings.gradle.kts <<'EOF_0'
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = "KacampoFoto"
+          include(":app")
+          EOF_0
+          cat > build.gradle.kts <<'EOF_1'
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          EOF_1
+          cat > gradle.properties <<'EOF_2'
+          org.gradle.jvmargs=-Xmx2g
+          android.useAndroidX=true
+          kotlin.code.style=official
+          EOF_2
+          mkdir -p app
+          cat > app/build.gradle.kts <<'EOF_3'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "com.fastmerge"
+              compileSdk = 34
+
+              defaultConfig {
+                  applicationId = "com.kacampo.foto"
+                  minSdk = 29
+                  targetSdk = 34
+                  versionCode = 2
+                  versionName = "1.1"
+              }
+
+              signingConfigs {
+                  create("fm") {
+                      storeFile = file("../fm.keystore")
+                      storePassword = "fastmerge"
+                      keyAlias = "fm"
+                      keyPassword = "fastmerge"
+                  }
+              }
+
+              buildTypes {
+                  release {
+                      isMinifyEnabled = true
+                      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+                      // kunci tetap, supaya update APK bisa dipasang di atas versi lama
+                      signingConfig = signingConfigs.getByName("fm")
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+              lint {
+                  checkReleaseBuilds = false
+                  abortOnError = false
+              }
+          }
+
+          dependencies {
+              implementation("androidx.activity:activity-ktx:1.9.0")
+              implementation("androidx.recyclerview:recyclerview:1.3.2")
+              implementation("androidx.exifinterface:exifinterface:1.3.7")
+          }
+          EOF_3
+          mkdir -p app/src/main
+          cat > app/src/main/AndroidManifest.xml <<'EOF_4'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <!-- Sengaja TANPA permission INTERNET: aplikasi 100% offline dan tanpa iklan -->
+              <application
+                  android:allowBackup="false"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher"
+                  android:label="Kacampo Foto"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:screenOrientation="portrait"
+                      android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF_4
+          mkdir -p app/src/main/res/values
+          cat > app/src/main/res/values/colors.xml <<'EOF_5'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="ic_bg">#141D2B</color>
+          </resources>
+          EOF_5
+          mkdir -p app/src/main/res/mipmap-anydpi-v26
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'EOF_6'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_bg" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          EOF_6
+          mkdir -p app/src/main/res/drawable-nodpi
+          echo "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAGwAbADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD89KKKK9g88KKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigApwWhRU8ceaAIxFmlEPtV2G2aQgKpZj2UZNWDYSR43xumem5SM/nQBl+R7Uv2f2rWSxLEAAk9gB1qVtJmRd7wSovqyED+VAjE+z+1H2f2raFh7VP/AGLOFLGCQLjO7YcY+uKYXOf+ze1H2X2rd/s/HalGn+1FguYX2X2o+ye1dLaaHNey+XbwSXEn9yJC7fkBU934XvbAA3VlcWwPQzwsg/UCgLnKfZPaj7IPSuiOmbTjbg05dKMhAVSSeAAOTRYVzm/sg9KPsg9K6iTQpol3PDIi9MuhA/Wof7Mx2osO5zv2QelJ9k9q6aPRpJhlIZJBnGUQn+VMOl4PK4osK5zn2T2o+y+1dCdN9qcmjyS52Qu4HGVUmiw7nN/Zfaj7L7V0I0tmOFRmY9ABk0o0O4Y8W0x+kbf4UBc5z7P7UfZ/at+fSZLcZlieIesilf51AbHnpQFzH+z+1J5HtWx9hwCcVat/DWo3qeZBp93PHjO+K3dl/MCkG5znk+1IYsVrzWDwOyOhR14KsMEfUVWkgx2oGZ5TFN6VakjxVdhigBlFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAPSrsC5IqnHWhbdRQB6t+zdp633xm8LwMOHlkH/AJBevbf20/Dg0zS/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ABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFAH//2Q==" | base64 -d > app/src/main/res/drawable-nodpi/ic_launcher_foreground.jpg
+          mkdir -p app/src/main/java/com/fastmerge
+          cat > app/src/main/java/com/fastmerge/MainActivity.kt <<'EOF_8'
+          package com.fastmerge
+
+          import android.content.ContentValues
+          import android.content.Intent
+          import android.graphics.Bitmap
+          import android.graphics.BitmapFactory
+          import android.graphics.BitmapShader
+          import android.graphics.Canvas
+          import android.graphics.Color
+          import android.graphics.Matrix
+          import android.graphics.Paint
+          import android.graphics.RectF
+          import android.graphics.Shader
+          import android.graphics.drawable.GradientDrawable
+          import android.net.Uri
+          import android.os.Bundle
+          import android.provider.MediaStore
+          import android.view.Gravity
+          import android.view.MotionEvent
+          import android.view.View
+          import android.view.ViewGroup
+          import android.view.animation.AccelerateInterpolator
+          import android.view.animation.DecelerateInterpolator
+          import android.view.animation.OvershootInterpolator
+          import android.widget.Button
+          import android.widget.FrameLayout
+          import android.widget.ImageView
+          import android.widget.LinearLayout
+          import android.widget.SeekBar
+          import android.widget.TextView
+          import android.widget.Toast
+          import androidx.activity.ComponentActivity
+          import androidx.activity.OnBackPressedCallback
+          import androidx.activity.result.PickVisualMediaRequest
+          import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.exifinterface.media.ExifInterface
+          import androidx.recyclerview.widget.ItemTouchHelper
+          import androidx.recyclerview.widget.LinearLayoutManager
+          import androidx.recyclerview.widget.RecyclerView
+          import java.util.concurrent.Executors
+          import kotlin.math.ceil
+          import kotlin.math.max
+          import kotlin.math.min
+
+          private const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
+          private const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
+          private const val MAX_PIXELS = 36_000_000L   // batas aman memori (hasil akhir)
+          private const val MAX_SIDE = 16000
+          private const val MAX_BASE = 2000f           // lebar/tinggi dasar maksimal hasil akhir
+          private const val PREVIEW_PIXELS = 6_000_000L
+          private const val PREVIEW_SIDE = 4096
+          private const val BLUE = 0xFF2962FF.toInt()
+          private const val NAVY = 0xFF1F3A93.toInt()
+          private const val SOFT = 0xFFE3E8F7.toInt()
+
+          class MainActivity : ComponentActivity() {
+
+              private class Info(val uri: Uri, val w: Int, val h: Int, val rot: Int)
+              private class Cfg(val horizontal: Boolean, val frame: Int, val gap: Int, val rad: Int, val bg: Int)
+              private class Layout(val rects: List<RectF>, val w: Int, val h: Int)
+              private class VH(val row: LinearLayout, val img: ImageView, val num: TextView, val del: TextView) :
+                  RecyclerView.ViewHolder(row)
+
+              private val uris = ArrayList<Uri>()
+              private val thumbs = android.util.LruCache<Uri, Bitmap>(80)
+              private val cores = Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
+              private val pool = Executors.newFixedThreadPool(cores)
+              private val thumbPool = Executors.newFixedThreadPool(2)
+              private val work = Executors.newSingleThreadExecutor()
+              private val renderExec = Executors.newSingleThreadExecutor()
+
+              // Pengaturan (default: horizontal). Diubah lewat halaman pratinjau.
+              private var horizontal = true
+              private var bg = Color.WHITE
+              private var frameP = 0
+              private var gapP = 0
+              private var radP = 0
+
+              private var lastSaved: Uri? = null
+              private var previewToken = 0
+              @Volatile private var renderGen = 0
+              private var pInfos: List<Info>? = null
+              private var pBitmaps: List<Bitmap>? = null
+              private var pBase = 720f
+
+              private val colorValues = intArrayOf(
+                  Color.WHITE, Color.BLACK, 0xFF2962FF.toInt(),
+                  0xFFE53935.toInt(), 0xFF43A047.toInt(), 0xFFFFB300.toInt()
+              )
+              private val colorViews = ArrayList<View>()
+
+              private lateinit var mainView: View
+              private lateinit var mainPanel: View
+              private lateinit var previewView: View
+              private lateinit var list: RecyclerView
+              private lateinit var empty: TextView
+              private lateinit var countText: TextView
+              private lateinit var previewBtn: Button
+              private lateinit var segH: Button
+              private lateinit var segV: Button
+              private lateinit var previewImg: ImageView
+              private lateinit var previewMsg: TextView
+              private lateinit var saveBtn: Button
+              private lateinit var saveStatus: TextView
+              private lateinit var backCb: OnBackPressedCallback
+
+              private val picker =
+                  registerForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { r ->
+                      if (r.isNotEmpty()) {
+                          val start = uris.size
+                          uris.addAll(r)
+                          list.adapter?.notifyItemRangeInserted(start, r.size)
+                          refresh()
+                      }
+                  }
+
+              private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+              private fun cfg() = Cfg(horizontal, frameP, gapP, radP, bg)
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  val container = FrameLayout(this)
+                  mainView = buildMain()
+                  previewView = buildPreview()
+                  previewView.visibility = View.GONE
+                  container.addView(mainView, MATCH, MATCH)
+                  container.addView(previewView, MATCH, MATCH)
+                  setContentView(container)
+
+                  backCb = object : OnBackPressedCallback(false) {
+                      override fun handleOnBackPressed() { closePreview() }
+                  }
+                  onBackPressedDispatcher.addCallback(this, backCb)
+
+                  paintSeg()
+                  paintColors()
+                  refresh()
+
+                  // Animasi masuk panel bawah
+                  mainPanel.translationY = dp(140).toFloat()
+                  mainPanel.alpha = 0f
+                  mainPanel.animate().translationY(0f).alpha(1f).setDuration(420)
+                      .setInterpolator(DecelerateInterpolator(1.6f)).start()
+              }
+
+              // ---------- Efek animasi ----------
+              private fun pressFx(v: View) {
+                  v.setOnTouchListener { view, e ->
+                      when (e.actionMasked) {
+                          MotionEvent.ACTION_DOWN ->
+                              view.animate().scaleX(0.94f).scaleY(0.94f).setDuration(90).start()
+                          MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                              view.animate().scaleX(1f).scaleY(1f).setDuration(180)
+                                  .setInterpolator(OvershootInterpolator(2.5f)).start()
+                      }
+                      false
+                  }
+              }
+
+              private fun pulse(v: View) {
+                  v.scaleX = 0.7f
+                  v.scaleY = 0.7f
+                  v.animate().scaleX(1f).scaleY(1f).setDuration(280)
+                      .setInterpolator(OvershootInterpolator(3f)).start()
+              }
+
+              // ---------- Beranda: daftar gambar + tombol di bawah (zona jempol) ----------
+              private fun buildMain(): View {
+                  val root = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setBackgroundColor(Color.parseColor("#F1F3F8"))
+                  }
+
+                  val header = LinearLayout(this).apply {
+                      orientation = LinearLayout.HORIZONTAL
+                      gravity = Gravity.CENTER_VERTICAL
+                      setPadding(dp(20), dp(24), dp(20), dp(8))
+                  }
+                  header.addView(TextView(this).apply {
+                      text = "Kacampo Foto"
+                      textSize = 22f
+                      setTextColor(NAVY)
+                  }, LinearLayout.LayoutParams(0, WRAP, 1f))
+                  countText = TextView(this).apply { textSize = 14f; setTextColor(Color.GRAY) }
+                  header.addView(countText)
+                  root.addView(header)
+
+                  val frame = FrameLayout(this)
+                  list = RecyclerView(this).apply {
+                      layoutManager = LinearLayoutManager(this@MainActivity)
+                      adapter = Adapter()
+                      setHasFixedSize(true)
+                      clipToPadding = false
+                      setPadding(dp(12), 0, dp(12), dp(8))
+                  }
+                  empty = TextView(this).apply {
+                      text = "＋\n\nKetuk di sini untuk tambah gambar\n\nTahan lama lalu geser\nuntuk atur urutan"
+                      gravity = Gravity.CENTER
+                      textSize = 16f
+                      setTextColor(Color.GRAY)
+                      setOnClickListener { pick() }
+                  }
+                  frame.addView(list, MATCH, MATCH)
+                  frame.addView(empty, MATCH, MATCH)
+                  root.addView(frame, LinearLayout.LayoutParams(MATCH, 0, 1f))
+
+                  ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
+                      ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0
+                  ) {
+                      override fun onMove(
+                          rv: RecyclerView, a: RecyclerView.ViewHolder, b: RecyclerView.ViewHolder
+                      ): Boolean {
+                          val f = a.bindingAdapterPosition
+                          val t = b.bindingAdapterPosition
+                          if (f < 0 || t < 0) return false
+                          uris.add(t, uris.removeAt(f))
+                          rv.adapter?.notifyItemMoved(f, t)
+                          return true
+                      }
+
+                      override fun onSwiped(vh: RecyclerView.ViewHolder, d: Int) {}
+
+                      override fun clearView(rv: RecyclerView, vh: RecyclerView.ViewHolder) {
+                          super.clearView(rv, vh)
+                          rv.post { rv.adapter?.notifyDataSetChanged() }
+                      }
+                  }).attachToRecyclerView(list)
+
+                  val panel = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(dp(16), dp(16), dp(16), dp(20))
+                      background = GradientDrawable().apply {
+                          setColor(Color.WHITE)
+                          val r = dp(24).toFloat()
+                          cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
+                      }
+                      elevation = dp(8).toFloat()
+                  }
+                  mainPanel = panel
+
+                  val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                  val addBtn = action("+ Tambah", false) { pick() }
+                  val clearBtn = action("Bersihkan", false) {
+                      val n = uris.size
+                      uris.clear()
+                      list.adapter?.notifyItemRangeRemoved(0, n)
+                      refresh()
+                  }
+                  previewBtn = action("Pratinjau ▶", true) { showPreview() }
+                  actions.addView(addBtn, LinearLayout.LayoutParams(0, dp(60), 1f).apply { rightMargin = dp(8) })
+                  actions.addView(clearBtn, LinearLayout.LayoutParams(0, dp(60), 1f).apply { rightMargin = dp(8) })
+                  actions.addView(previewBtn, LinearLayout.LayoutParams(0, dp(60), 1.5f))
+                  panel.addView(actions)
+
+                  root.addView(panel, LinearLayout.LayoutParams(MATCH, WRAP))
+                  return root
+              }
+
+              // ---------- Pratinjau: semua pengaturan berubah langsung (real-time) ----------
+              private fun buildPreview(): View {
+                  val root = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setBackgroundColor(0xFF101218.toInt())
+                  }
+                  root.addView(TextView(this).apply {
+                      text = "Pratinjau"
+                      textSize = 20f
+                      setTextColor(Color.WHITE)
+                      setPadding(dp(20), dp(24), dp(20), dp(2))
+                  })
+                  root.addView(TextView(this).apply {
+                      text = "Ubah pengaturan di bawah, hasil langsung berubah"
+                      textSize = 12f
+                      setTextColor(Color.GRAY)
+                      setPadding(dp(20), 0, dp(20), dp(4))
+                  })
+
+                  val fr = FrameLayout(this)
+                  previewImg = ImageView(this).apply {
+                      scaleType = ImageView.ScaleType.FIT_CENTER
+                      setPadding(dp(12), dp(8), dp(12), dp(8))
+                  }
+                  previewMsg = TextView(this).apply {
+                      text = "Membuat pratinjau…"
+                      gravity = Gravity.CENTER
+                      setTextColor(Color.LTGRAY)
+                  }
+                  fr.addView(previewImg, MATCH, MATCH)
+                  fr.addView(previewMsg, MATCH, MATCH)
+                  root.addView(fr, LinearLayout.LayoutParams(MATCH, 0, 1f))
+
+                  saveStatus = TextView(this).apply {
+                      gravity = Gravity.CENTER
+                      textSize = 13f
+                      setTextColor(Color.LTGRAY)
+                      setPadding(dp(16), dp(4), dp(16), dp(6))
+                      setOnClickListener {
+                          lastSaved?.let {
+                              startActivity(Intent(Intent.ACTION_VIEW).apply {
+                                  setDataAndType(it, "image/jpeg")
+                                  addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                              })
+                          }
+                      }
+                  }
+                  root.addView(saveStatus)
+
+                  val panel = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(dp(16), dp(14), dp(16), dp(18))
+                      background = GradientDrawable().apply {
+                          setColor(Color.WHITE)
+                          val r = dp(24).toFloat()
+                          cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
+                      }
+                  }
+
+                  val seg = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                  segH = Button(this).apply {
+                      text = "Horizontal"; isAllCaps = false; stateListAnimator = null
+                      setOnClickListener { horizontal = true; paintSeg(); requestRender() }
+                  }
+                  segV = Button(this).apply {
+                      text = "Vertikal"; isAllCaps = false; stateListAnimator = null
+                      setOnClickListener { horizontal = false; paintSeg(); requestRender() }
+                  }
+                  pressFx(segH)
+                  pressFx(segV)
+                  seg.addView(segH, LinearLayout.LayoutParams(0, dp(46), 1f).apply { rightMargin = dp(8) })
+                  seg.addView(segV, LinearLayout.LayoutParams(0, dp(46), 1f))
+                  panel.addView(seg)
+
+                  panel.addView(seekRow("Bingkai") { frameP = it; requestRender() })
+                  panel.addView(seekRow("Spasi") { gapP = it; requestRender() })
+                  panel.addView(seekRow("Radius") { radP = it; requestRender() })
+
+                  val colorRow = LinearLayout(this).apply {
+                      orientation = LinearLayout.HORIZONTAL
+                      gravity = Gravity.CENTER_VERTICAL
+                      setPadding(0, dp(4), 0, dp(12))
+                  }
+                  colorRow.addView(TextView(this).apply { text = "Latar"; textSize = 15f },
+                      LinearLayout.LayoutParams(dp(72), WRAP))
+                  colorValues.forEach { c ->
+                      val v = View(this)
+                      v.setOnClickListener { bg = c; paintColors(); pulse(v); requestRender() }
+                      colorViews.add(v)
+                      colorRow.addView(v, LinearLayout.LayoutParams(dp(34), dp(34)).apply { rightMargin = dp(8) })
+                  }
+                  panel.addView(colorRow)
+
+                  val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                  val back = action("◀ Kembali", false) { closePreview() }
+                  saveBtn = action("SIMPAN", true) { doSave() }
+                  bar.addView(back, LinearLayout.LayoutParams(0, dp(58), 1f).apply { rightMargin = dp(8) })
+                  bar.addView(saveBtn, LinearLayout.LayoutParams(0, dp(58), 1.4f))
+                  panel.addView(bar)
+
+                  root.addView(panel, LinearLayout.LayoutParams(MATCH, WRAP))
+                  return root
+              }
+
+              private fun showPreview() {
+                  if (uris.size < 2) {
+                      Toast.makeText(this, "Pilih minimal 2 gambar", Toast.LENGTH_SHORT).show()
+                      return
+                  }
+                  val token = ++previewToken
+                  renderGen++
+                  pInfos = null
+                  pBitmaps = null
+                  backCb.isEnabled = true
+
+                  previewImg.setImageDrawable(null)
+                  previewMsg.text = "Membuat pratinjau…"
+                  previewMsg.visibility = View.VISIBLE
+                  saveStatus.text = ""
+                  saveBtn.text = "SIMPAN"
+                  setEnabled(saveBtn, false)
+
+                  // Transisi: pratinjau naik sambil memudar masuk, beranda memudar keluar
+                  previewView.animate().cancel()
+                  previewView.visibility = View.VISIBLE
+                  previewView.alpha = 0f
+                  previewView.translationY = dp(60).toFloat()
+                  previewView.animate().alpha(1f).translationY(0f).setDuration(280)
+                      .setInterpolator(DecelerateInterpolator(1.5f)).start()
+                  mainView.animate().alpha(0f).setDuration(220).withEndAction {
+                      if (backCb.isEnabled) mainView.visibility = View.GONE
+                  }.start()
+
+                  val items = uris.toList()
+                  work.execute {
+                      try {
+                          val ms = if (items.size > 30) 480 else 720
+                          val infos = items.map { u -> pool.submit<Info> { info(u) } }.map { it.get() }
+                          val bms = infos.map { i ->
+                              pool.submit<Bitmap> { decode(i, if (i.w <= i.h) ms else ms * i.w / i.h) }
+                          }.map { it.get() }
+                          runOnUiThread {
+                              if (token == previewToken && backCb.isEnabled) {
+                                  pInfos = infos
+                                  pBitmaps = bms
+                                  pBase = ms.toFloat()
+                                  previewMsg.visibility = View.GONE
+                                  setEnabled(saveBtn, true)
+                                  requestRender(true)
+                              }
+                          }
+                      } catch (e: Throwable) {
+                          runOnUiThread {
+                              if (token == previewToken) {
+                                  previewMsg.text = "Gagal: ${e.message ?: e.javaClass.simpleName}"
+                              }
+                          }
+                      }
+                  }
+              }
+
+              private fun closePreview() {
+                  previewToken++
+                  renderGen++
+                  backCb.isEnabled = false
+                  mainView.visibility = View.VISIBLE
+                  mainView.animate().alpha(1f).setDuration(240).start()
+                  previewView.animate().alpha(0f).translationY(dp(60).toFloat()).setDuration(220)
+                      .setInterpolator(AccelerateInterpolator()).withEndAction {
+                          if (!backCb.isEnabled) {
+                              previewView.visibility = View.GONE
+                              previewImg.setImageDrawable(null)
+                              pInfos = null
+                              pBitmaps = null
+                          }
+                      }.start()
+              }
+
+              /** Gambar ulang pratinjau dari cache (cepat). Hanya hasil terbaru yang ditampilkan. */
+              private fun requestRender(first: Boolean = false) {
+                  val infos = pInfos ?: return
+                  val bms = pBitmaps ?: return
+                  val c = cfg()
+                  val base = pBase
+                  val gen = ++renderGen
+                  renderExec.execute {
+                      if (gen != renderGen) return@execute
+                      try {
+                          val bm = renderFromCache(infos, bms, c, base)
+                          runOnUiThread {
+                              if (gen == renderGen && backCb.isEnabled) {
+                                  previewImg.setImageBitmap(bm)
+                                  if (first) {
+                                      previewImg.alpha = 0f
+                                      previewImg.animate().alpha(1f).setDuration(260).start()
+                                  }
+                              }
+                          }
+                      } catch (e: Throwable) {
+                          // abaikan, render berikutnya akan menimpa
+                      }
+                  }
+              }
+
+              private fun doSave() {
+                  val items = uris.toList()
+                  val c = cfg()
+                  setEnabled(saveBtn, false)
+                  saveStatus.text = "Menyimpan…"
+                  work.execute {
+                      val t0 = System.currentTimeMillis()
+                      try {
+                          val bm = mergeBitmap(items, c)
+                          val u = saveBitmap(bm)
+                          bm.recycle()
+                          val ms = System.currentTimeMillis() - t0
+                          runOnUiThread {
+                              lastSaved = u
+                              saveStatus.text = "✓ Tersimpan di Pictures/KacampoFoto (${ms} ms) · ketuk untuk melihat"
+                              saveBtn.text = "SIMPAN LAGI"
+                              setEnabled(saveBtn, true)
+                              pulse(saveBtn)
+                          }
+                      } catch (e: Throwable) {
+                          runOnUiThread {
+                              saveStatus.text = "Gagal: ${e.message ?: e.javaClass.simpleName}"
+                              setEnabled(saveBtn, true)
+                          }
+                      }
+                  }
+              }
+
+              // ---------- Helper UI ----------
+              private fun pick() {
+                  picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+              }
+
+              private fun setEnabled(b: Button, on: Boolean) {
+                  b.isEnabled = on
+                  b.animate().alpha(if (on) 1f else 0.4f).setDuration(150).start()
+              }
+
+              private fun skin(b: Button, on: Boolean) {
+                  b.background = GradientDrawable().apply {
+                      cornerRadius = dp(14).toFloat()
+                      setColor(if (on) BLUE else SOFT)
+                  }
+                  b.setTextColor(if (on) Color.WHITE else NAVY)
+              }
+
+              private fun action(t: String, primary: Boolean, onClick: () -> Unit): Button =
+                  Button(this).apply {
+                      text = t
+                      isAllCaps = false
+                      textSize = 15f
+                      stateListAnimator = null
+                      setPadding(dp(4), 0, dp(4), 0)
+                      skin(this, primary)
+                      pressFx(this)
+                      setOnClickListener { onClick() }
+                  }
+
+              private fun paintSeg() {
+                  skin(segH, horizontal)
+                  skin(segV, !horizontal)
+              }
+
+              private fun paintColors() {
+                  colorViews.forEachIndexed { i, v ->
+                      val sel = colorValues[i] == bg
+                      v.background = GradientDrawable().apply {
+                          shape = GradientDrawable.OVAL
+                          setColor(colorValues[i])
+                          setStroke(if (sel) dp(3) else dp(1), if (sel) BLUE else 0xFF999999.toInt())
+                      }
+                  }
+              }
+
+              private fun seekRow(label: String, onChange: (Int) -> Unit): View {
+                  val row = LinearLayout(this).apply {
+                      orientation = LinearLayout.HORIZONTAL
+                      gravity = Gravity.CENTER_VERTICAL
+                  }
+                  row.addView(TextView(this).apply { text = label; textSize = 15f },
+                      LinearLayout.LayoutParams(dp(72), WRAP))
+                  val value = TextView(this).apply {
+                      text = "0"; gravity = Gravity.END; textSize = 14f; setTextColor(Color.GRAY)
+                  }
+                  val sb = SeekBar(this).apply {
+                      max = 100
+                      setPadding(dp(16), dp(10), dp(16), dp(10))
+                      setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                          override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
+                              value.text = "$p"
+                              onChange(p)
+                          }
+                          override fun onStartTrackingTouch(s: SeekBar?) {}
+                          override fun onStopTrackingTouch(s: SeekBar?) {}
+                      })
+                  }
+                  row.addView(sb, LinearLayout.LayoutParams(0, WRAP, 1f))
+                  row.addView(value, LinearLayout.LayoutParams(dp(36), WRAP))
+                  return row
+              }
+
+              private fun refresh() {
+                  empty.visibility = if (uris.isEmpty()) View.VISIBLE else View.GONE
+                  countText.text = if (uris.isEmpty()) "" else "${uris.size} gambar"
+                  setEnabled(previewBtn, uris.size >= 2)
+              }
+
+              // ---------- Daftar gambar ----------
+              private inner class Adapter : RecyclerView.Adapter<VH>() {
+                  override fun getItemCount() = uris.size
+
+                  override fun onCreateViewHolder(p: ViewGroup, t: Int): VH {
+                      val row = LinearLayout(this@MainActivity).apply {
+                          orientation = LinearLayout.HORIZONTAL
+                          gravity = Gravity.CENTER_VERTICAL
+                          setBackgroundColor(Color.WHITE)
+                          setPadding(dp(8), dp(4), dp(8), dp(4))
+                          layoutParams = RecyclerView.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(3) }
+                      }
+                      val num = TextView(this@MainActivity).apply { textSize = 16f; gravity = Gravity.CENTER }
+                      val img = ImageView(this@MainActivity).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+                      val del = TextView(this@MainActivity).apply {
+                          text = "✕"; textSize = 20f; setPadding(dp(20), dp(12), dp(12), dp(12))
+                      }
+                      row.addView(num, LinearLayout.LayoutParams(dp(32), WRAP))
+                      row.addView(img, LinearLayout.LayoutParams(dp(64), dp(64)))
+                      row.addView(View(this@MainActivity), LinearLayout.LayoutParams(0, 1, 1f))
+                      row.addView(del)
+                      val h = VH(row, img, num, del)
+                      pressFx(del)
+                      del.setOnClickListener {
+                          val pos = h.bindingAdapterPosition
+                          if (pos >= 0) {
+                              uris.removeAt(pos)
+                              notifyItemRemoved(pos)
+                              notifyItemRangeChanged(pos, uris.size - pos)
+                              refresh()
+                          }
+                      }
+                      return h
+                  }
+
+                  override fun onBindViewHolder(h: VH, pos: Int) {
+                      val u = uris[pos]
+                      h.num.text = "${pos + 1}"
+                      h.img.tag = u
+                      val c = thumbs.get(u)
+                      if (c != null) {
+                          h.img.setImageBitmap(c)
+                      } else {
+                          h.img.setImageDrawable(null)
+                          thumbPool.execute {
+                              val b = try { decodeThumb(u) } catch (e: Throwable) { null }
+                              if (b != null) {
+                                  thumbs.put(u, b)
+                                  runOnUiThread {
+                                      if (h.img.tag == u) {
+                                          h.img.alpha = 0f
+                                          h.img.setImageBitmap(b)
+                                          h.img.animate().alpha(1f).setDuration(180).start()
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+
+              // ---------- Decode ----------
+              private fun info(u: Uri): Info {
+                  val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                  contentResolver.openInputStream(u)!!.use { BitmapFactory.decodeStream(it, null, o) }
+                  val rot = contentResolver.openInputStream(u)!!.use {
+                      when (ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, 1)) {
+                          6 -> 90; 3 -> 180; 8 -> 270; else -> 0
+                      }
+                  }
+                  return if (rot == 90 || rot == 270) Info(u, o.outHeight, o.outWidth, rot)
+                  else Info(u, o.outWidth, o.outHeight, rot)
+              }
+
+              /** Decode hemat memori: hanya sebesar yang dibutuhkan (targetW = lebar tampilan akhir). */
+              private fun decode(i: Info, targetW: Int): Bitmap {
+                  var s = 1
+                  while (i.w / (s * 2) >= targetW) s *= 2
+                  val o = BitmapFactory.Options().apply { inSampleSize = s }
+                  var b = contentResolver.openInputStream(i.uri)!!.use { BitmapFactory.decodeStream(it, null, o) }!!
+                  if (i.rot != 0) {
+                      val m = Matrix().apply { postRotate(i.rot.toFloat()) }
+                      val r = Bitmap.createBitmap(b, 0, 0, b.width, b.height, m, true)
+                      b.recycle()
+                      b = r
+                  }
+                  return b
+              }
+
+              private fun decodeThumb(u: Uri): Bitmap {
+                  val i = info(u)
+                  val tw = if (i.w >= i.h) 192 else max(1, 192 * i.w / i.h)
+                  return decode(i, tw)
+              }
+
+              // ---------- Gabung ----------
+              private fun layout(infos: List<Info>, base: Float, c: Cfg): Layout {
+                  val unit = base / 1000f
+                  val f = c.frame * unit
+                  val g = c.gap * unit
+                  val rects = ArrayList<RectF>(infos.size)
+                  var pos = f
+                  for (i in infos) {
+                      if (c.horizontal) {
+                          val w = i.w * base / i.h
+                          rects.add(RectF(pos, f, pos + w, f + base)); pos += w + g
+                      } else {
+                          val h = i.h * base / i.w
+                          rects.add(RectF(f, pos, f + base, pos + h)); pos += h + g
+                      }
+                  }
+                  val total = pos - g + f
+                  val ow = if (c.horizontal) total else base + 2 * f
+                  val oh = if (c.horizontal) base + 2 * f else total
+                  return Layout(rects, ceil(ow).toInt(), ceil(oh).toInt())
+              }
+
+              private fun drawOne(cv: Canvas, b: Bitmap, r: RectF, radius: Float, plain: Paint, round: Paint) {
+                  if (radius > 0f) {
+                      val sh = BitmapShader(b, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+                      val m = Matrix()
+                      m.setRectToRect(
+                          RectF(0f, 0f, b.width.toFloat(), b.height.toFloat()), r, Matrix.ScaleToFit.FILL
+                      )
+                      sh.setLocalMatrix(m)
+                      round.shader = sh
+                      cv.drawRoundRect(r, radius, radius, round)
+                  } else {
+                      cv.drawBitmap(b, null, r, plain)
+                  }
+              }
+
+              /** Pratinjau cepat: memakai bitmap kecil yang sudah di-cache. */
+              private fun renderFromCache(infos: List<Info>, bms: List<Bitmap>, c: Cfg, maxBase: Float): Bitmap {
+                  var base = min(
+                      if (c.horizontal) infos.maxOf { it.h }.toFloat() else infos.maxOf { it.w }.toFloat(),
+                      maxBase
+                  )
+                  var L = layout(infos, base, c)
+                  while (L.w.toLong() * L.h > PREVIEW_PIXELS || max(L.w, L.h) > PREVIEW_SIDE) {
+                      base *= 0.9f
+                      L = layout(infos, base, c)
+                  }
+                  val out = Bitmap.createBitmap(L.w, L.h, Bitmap.Config.ARGB_8888)
+                  val cv = Canvas(out)
+                  cv.drawColor(c.bg)
+                  val plain = Paint(Paint.FILTER_BITMAP_FLAG)
+                  val round = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+                  val radius = c.rad * base / 1000f
+                  for (j in infos.indices) drawOne(cv, bms[j], L.rects[j], radius, plain, round)
+                  return out
+              }
+
+              /** Hasil akhir: kualitas penuh, decode paralel dari file asli. */
+              private fun mergeBitmap(items: List<Uri>, c: Cfg): Bitmap {
+                  val infos = items.map { u -> pool.submit<Info> { info(u) } }.map { it.get() }
+                  var base = min(
+                      if (c.horizontal) infos.maxOf { it.h }.toFloat() else infos.maxOf { it.w }.toFloat(),
+                      MAX_BASE
+                  )
+                  var L = layout(infos, base, c)
+                  while (L.w.toLong() * L.h > MAX_PIXELS || max(L.w, L.h) > MAX_SIDE) {
+                      base *= 0.9f
+                      L = layout(infos, base, c)
+                  }
+
+                  val out = Bitmap.createBitmap(L.w, L.h, Bitmap.Config.ARGB_8888)
+                  val cv = Canvas(out)
+                  cv.drawColor(c.bg)
+                  val plain = Paint(Paint.FILTER_BITMAP_FLAG)
+                  val round = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+                  val radius = c.rad * base / 1000f
+
+                  var idx = 0
+                  while (idx < infos.size) {
+                      val end = min(idx + cores, infos.size)
+                      val futs = (idx until end).map { j ->
+                          pool.submit<Bitmap> { decode(infos[j], ceil(L.rects[j].width()).toInt()) }
+                      }
+                      futs.forEachIndexed { n, fu ->
+                          val b = fu.get()
+                          drawOne(cv, b, L.rects[idx + n], radius, plain, round)
+                          b.recycle()
+                      }
+                      idx = end
+                  }
+                  return out
+              }
+
+              private fun saveBitmap(bm: Bitmap): Uri? {
+                  val v = ContentValues().apply {
+                      put(MediaStore.Images.Media.DISPLAY_NAME, "Kacampo_${System.currentTimeMillis()}.jpg")
+                      put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                      put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/KacampoFoto")
+                      put(MediaStore.Images.Media.IS_PENDING, 1)
+                  }
+                  val u = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v) ?: return null
+                  contentResolver.openOutputStream(u)!!.use { bm.compress(Bitmap.CompressFormat.JPEG, 95, it) }
+                  v.clear()
+                  v.put(MediaStore.Images.Media.IS_PENDING, 0)
+                  contentResolver.update(u, v, null, null)
+                  return u
+              }
+          }
+          EOF_8
+      - name: Pakai MainActivity.kt dari repo jika ada
+        run: |
+          if [ -f MainActivity.kt ]; then
+            cp MainActivity.kt app/src/main/java/com/fastmerge/MainActivity.kt
+            echo "Memakai MainActivity.kt dari repo"
+          fi
+      - name: Siapkan kunci tanda tangan
+        run: echo "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" | base64 -d > fm.keystore
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+      - name: Build APK
+        run: gradle assembleRelease --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KacampoFoto-apk
+          path: app/build/outputs/apk/release/*.apk
